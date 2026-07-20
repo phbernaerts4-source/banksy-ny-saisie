@@ -367,8 +367,15 @@ def _whatsapp_recap(report_date, d):
     if breakdown:
         lines.append("")
         lines.extend(breakdown)
+    # cash desk breakdown (Cash / Card / Online) — fall back to estimated revenue
+    caisse_lines = [f"{lbl} : ${float(d.get(k) or 0):,.0f}" for k, lbl in
+                    (("caisse_cash", "Cash"), ("caisse_card", "Card"),
+                     ("caisse_online", "Online")) if float(d.get(k) or 0)]
     lines.append("")
-    lines.append(f"Revenue : ${rev:,.0f}")
+    if caisse_lines:
+        lines.extend(caisse_lines)
+    else:
+        lines.append(f"Revenue : ${rev:,.0f}")
     if d.get("special_event"):
         lines.append(f"Event : {d['special_event']}")
     return "https://wa.me/?text=" + quote("\n".join(lines))
