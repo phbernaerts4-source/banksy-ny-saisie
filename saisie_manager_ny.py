@@ -65,6 +65,8 @@ IS_CLOUD = not os.path.exists(DB_PATH)
 
 # Login code — overridable via secret so it's never committed to GitHub.
 ACCESS_CODE = _secret("access_code", ACCESS_CODE)
+# Code required to modify a date that already has a record (overridable via secret).
+MOD_CODE = str(_secret("mod_code", "123456"))
 
 # Resellers — Source: Banksy Museum-NYC 2024+2025+2026 MASTER Financials
 # Resellers aligned with NY MASTER Sheet — "INCOME 2026" tab (20 columns).
@@ -381,6 +383,105 @@ def _whatsapp_recap(report_date, d):
     return "https://wa.me/?text=" + quote("\n".join(lines))
 
 
+def load_from_gsheet(report_date):
+    """Read the existing row for this date from the Sheet and reverse-map it to a
+    report dict (for prefilling / recall). Returns None if the date has no data.
+    Note: ticket-rate breakdown is not stored in the Sheet, so it isn't recovered."""
+    try:
+        ss = _gsheet_service().spreadsheets()
+        hdr = ss.values().get(spreadsheetId=GSHEET_ID,
+                              range=f"'{GSHEET_TAB}'!2:2").execute().get("values", [[]])
+        names = hdr[0] if hdr else []
+        col_map = {str(nm).strip(): i for i, nm in enumerate(names, 1)
+                   if nm and str(nm).strip()}
+        colA = ss.values().get(spreadsheetId=GSHEET_ID,
+                               range=f"'{GSHEET_TAB}'!A4:A").execute().get("values", [])
+        date_iso = report_date.isoformat()
+        target = None
+        for i, r in enumerate(colA):
+            if r and str(r[0]).strip()[:10] == date_iso:
+                target = i + 4
+                break
+        if target is None:
+            return None
+        row = ss.values().get(spreadsheetId=GSHEET_ID,
+                              range=f"'{GSHEET_TAB}'!{target}:{target}").execute().get("values", [[]])
+        row = row[0] if row else []
+
+        def gv(colname):
+            c = _resolve_col(col_map, colname)
+            if c and c - 1 < len(row):
+                v = row[c - 1]
+                return v if v not in ("", None) else None
+            return None
+
+        rep, has = {}, False
+        for name, _kind in RESELLERS:
+            v = gv(name)
+            if v is not None:
+                try:
+                    rep[f"rev_{name}"] = float(v); has = True
+                except ValueError:
+                    pass
+        for chan in CHANNELS:
+            v = gv(chan)
+            if v is not None:
+                try:
+                    rep[f"canal_{chan}"] = int(float(v)); has = True
+                except ValueError:
+                    pass
+        for gtype in GROUP_TYPES:
+            tcol = _GROUP_TARGET.get(gtype)
+            v = gv(tcol) if tcol else None
+            if v is not None:
+                try:
+                    rep[f"grp_{gtype}_pax"] = int(float(v)); has = True
+                except ValueError:
+                    pass
+            pc = _GROUP_PRICE.get(gtype)
+            pv = gv(pc) if pc else None
+            if pv is not None:
+                try:
+                    rep[f"grp_{gtype}_rate"] = float(pv)
+                except ValueError:
+                    pass
+        av = gv("Audioguide")
+        if av is not None:
+            try:
+                rep["audio_qty"] = int(float(av)); has = True
+            except ValueError:
+                pass
+        for key, col in (("caisse_cash", "Recette Cash (EUR)"),
+                         ("caisse_card", "Recette Card (EUR)"),
+                         ("caisse_online", "Recette Online (EUR)")):
+            v = gv(col)
+            if v is not None:
+                try:
+                    rep[key] = float(v); has = True
+                except ValueError:
+                    pass
+        tv = gv("Total Entrées")
+        if tv is not None:
+            try:
+                rep["total_tickets"] = int(float(tv)); has = True
+            except ValueError:
+                pass
+        rv = gv("Remarques")
+        if rv:
+            has = True
+            s = str(rv)
+            if s.startswith("🎉 "):
+                parts = s[2:].split(" · ", 1)
+                rep["special_event"] = parts[0].strip()
+                if len(parts) > 1:
+                    rep["remarks"] = parts[1]
+            else:
+                rep["remarks"] = s
+        return rep if has else None
+    except Exception:
+        return None
+
+
 def export_mastersheet_ny():
     """Clone MasterSheet_NY_Test.xlsx (colored, paged template) and fill the
     EXPORT_MASTERSHEET tab with EVERY saved daily report. Formulas and styles
@@ -588,9 +689,30 @@ report_date = st.date_input(
     max_value=date.today(),
 )
 
-existing = load_existing_report(report_date)
+# Recall a day from the Sheet (cloud-persistent). Load ONLY when the date changes,
+# then wipe widget state so all fields re-init from the recalled values.
+_date_iso = report_date.isoformat()
+if st.session_state.get("_loaded_date") != _date_iso:
+    st.session_state["_existing"] = load_from_gsheet(report_date) \
+        or load_existing_report(report_date)
+    for _k in list(st.session_state.keys()):
+        if _k.startswith(("rate_", "rev_", "canal_", "grp_", "audio_", "caisse_")) \
+           or _k in ("total_tickets", "special_event", "remarks", "mod_code_input"):
+            del st.session_state[_k]
+    st.session_state["_loaded_date"] = _date_iso
+    st.rerun()
+existing = st.session_state.get("_existing")
+
+# Editing a date that already has a record requires the modification code.
+edit_unlocked = True
 if existing:
-    st.info(f"📝 Existing report found for {report_date.strftime('%m/%d/%Y')} — editing.")
+    st.warning(f"📝 A record already exists for {report_date.strftime('%d/%m/%Y')} — "
+               "fields are pre-filled below.")
+    _mod = st.text_input("🔒 Modification code", type="password", key="mod_code_input",
+                         placeholder="Enter the code to modify this record")
+    edit_unlocked = (_mod == MOD_CODE)
+    if not edit_unlocked:
+        st.caption("🔒 Enter the modification code above to unlock saving.")
 
 
 def get_default(key, default=0):
@@ -800,6 +922,9 @@ st.markdown("---")
 # ✅ SAVE
 # ==============================================================================
 if st.button("✅ Save report", type="primary", use_container_width=True):
+    if existing and not edit_unlocked:
+        st.error("🔒 Modification code required to overwrite an existing record.")
+        st.stop()
     report = {}
     # Ticket rates breakdown
     for name, d in pricing_data.items():
@@ -834,22 +959,32 @@ if st.button("✅ Save report", type="primary", use_container_width=True):
     report["special_event"] = special_event
     report["remarks"] = remarks
 
-    # 1. Google Sheet = source of truth (cloud-persistent). Explicit error on
-    #    failure so nothing is ever silently lost.
-    try:
-        row_n, _back = save_to_gsheet(report_date, report)
-        st.success(
-            f"✅ Report for {report_date.strftime('%m/%d/%Y')} saved to "
-            f"MasterSheet NY (row {row_n})."
-        )
-        st.link_button(
-            "📲 Send WhatsApp recap",
-            _whatsapp_recap(report_date, report),
-            use_container_width=True,
-        )
-    except Exception as e:
-        st.error(f"⚠️ NOT saved to the sheet — please retry. Details: {e}")
+    # 1. Google Sheet = source of truth. Retry on transient errors (e.g. broken
+    #    pipe); the write is idempotent (1 row per date) so retry is safe.
+    row_n, _last_err = None, None
+    for _attempt in range(3):
+        try:
+            row_n, _back = save_to_gsheet(report_date, report)
+            break
+        except Exception as e:
+            _last_err = e
+            try:
+                _gsheet_service.clear()   # drop a possibly-stale cached connection
+            except Exception:
+                pass
+    if row_n is None:
+        st.error(f"⚠️ NOT saved to the sheet — please retry. Details: {_last_err}")
         st.stop()
+    st.session_state["_loaded_date"] = None   # force a fresh re-read next time
+    st.success(
+        f"✅ Report for {report_date.strftime('%m/%d/%Y')} saved to "
+        f"MasterSheet NY (row {row_n})."
+    )
+    st.link_button(
+        "📲 Send WhatsApp recap",
+        _whatsapp_recap(report_date, report),
+        use_container_width=True,
+    )
 
     # 2. Local JSON copy (kept for the local Excel/DB tooling; harmless on cloud).
     try:
