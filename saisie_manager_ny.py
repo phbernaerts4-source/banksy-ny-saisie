@@ -28,7 +28,7 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "museum_data.
 # ==============================================================================
 SITE_ID = "B_NY"
 SITE_CODE = "NY"       # short code — convention: NY (New York), MA (Madrid), BA (Barcelona)…
-ACCESS_CODE = "NYC2026"
+ACCESS_CODE = "SET_IN_SECRETS"   # real code lives ONLY in Streamlit secrets
 CURRENCY = "USD"
 
 # MasterSheet Excel — SINGLE SOURCE OF TRUTH: the colored/paged template.
