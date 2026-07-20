@@ -689,18 +689,14 @@ report_date = st.date_input(
     max_value=date.today(),
 )
 
-# Recall a day from the Sheet (cloud-persistent). Load ONLY when the date changes,
-# then wipe widget state so all fields re-init from the recalled values.
+# Recall a day from the Sheet (cloud-persistent). Loaded once per date; the form
+# widget keys are date-scoped (suffix _{_date_iso}) so every field re-inits from
+# the recalled values when the date changes.
 _date_iso = report_date.isoformat()
 if st.session_state.get("_loaded_date") != _date_iso:
     st.session_state["_existing"] = load_from_gsheet(report_date) \
         or load_existing_report(report_date)
-    for _k in list(st.session_state.keys()):
-        if _k.startswith(("rate_", "rev_", "canal_", "grp_", "audio_", "caisse_")) \
-           or _k in ("total_tickets", "special_event", "remarks", "mod_code_input"):
-            del st.session_state[_k]
     st.session_state["_loaded_date"] = _date_iso
-    st.rerun()
 existing = st.session_state.get("_existing")
 
 # Editing a date that already has a record requires the modification code.
@@ -708,7 +704,7 @@ edit_unlocked = True
 if existing:
     st.warning(f"📝 A record already exists for {report_date.strftime('%d/%m/%Y')} — "
                "fields are pre-filled below.")
-    _mod = st.text_input("🔒 Modification code", type="password", key="mod_code_input",
+    _mod = st.text_input("🔒 Modification code", type="password", key=f"mod_{_date_iso}",
                          placeholder="Enter the code to modify this record")
     edit_unlocked = (_mod == MOD_CODE)
     if not edit_unlocked:
@@ -743,7 +739,7 @@ for i in range(0, len(TICKET_RATES), 3):
                 min_value=0,
                 value=int(get_default(f"rate_{name}", 0)),
                 step=1,
-                key=f"rate_{name}",
+                key=f"rate_{name}_{_date_iso}",
             )
             if qty > 0:
                 pricing_data[name] = {"qty": qty, "price": price, "revenue": qty * price}
@@ -772,7 +768,7 @@ for i in range(0, len(RESELLERS), cols_per_row):
                 min_value=0.0,
                 value=float(get_default(f"rev_{name}", 0)),
                 step=1.0,
-                key=f"rev_{name}",
+                key=f"rev_{name}_{_date_iso}",
                 help=kind,
             )
             if val > 0:
@@ -798,7 +794,7 @@ for i in range(0, len(CHANNELS), cols_per_row):
                 min_value=0,
                 value=int(get_default(f"canal_{name}", 0)),
                 step=1,
-                key=f"canal_{name}",
+                key=f"canal_{name}_{_date_iso}",
             )
             if val > 0:
                 channel_data[name] = val
@@ -818,17 +814,17 @@ for gtype in GROUP_TYPES:
         with c1:
             g_pax = st.number_input("People", min_value=0,
                                      value=int(get_default(f"grp_{gtype}_pax", 0)),
-                                     step=1, key=f"grp_{gtype}_pax")
+                                     step=1, key=f"grp_{gtype}_pax_{_date_iso}")
         with c2:
             g_rate = st.number_input("Rate / person", min_value=0.0,
                                       value=float(get_default(f"grp_{gtype}_rate", 21.0)),
-                                      step=1.0, key=f"grp_{gtype}_rate")
+                                      step=1.0, key=f"grp_{gtype}_rate_{_date_iso}")
         with c3:
             g_rev = g_pax * g_rate
             st.metric("Revenue", f"${g_rev:,.2f}")
         g_notes = st.text_input("Notes (contact, org name…)",
                                  value=get_default(f"grp_{gtype}_notes", ""),
-                                 key=f"grp_{gtype}_notes")
+                                 key=f"grp_{gtype}_notes_{_date_iso}")
         if g_pax > 0:
             group_data[gtype] = {"pax": g_pax, "rate": g_rate,
                                   "revenue": g_rev, "notes": g_notes}
@@ -845,11 +841,11 @@ c1, c2, c3 = st.columns(3)
 with c1:
     audio_qty = st.number_input("Audioguides rented", min_value=0,
                                  value=int(get_default("audio_qty", 0)),
-                                 step=1, key="audio_qty")
+                                 step=1, key=f"audio_qty_{_date_iso}")
 with c2:
     audio_price = st.number_input("Price / unit ($)", min_value=0.0,
                                    value=float(get_default("audio_price", 5.0)),
-                                   step=0.5, key="audio_price")
+                                   step=0.5, key=f"audio_price_{_date_iso}")
 with c3:
     audio_revenue = audio_qty * audio_price
     st.metric("Audio revenue", f"${audio_revenue:,.2f}")
@@ -862,15 +858,15 @@ c1, c2, c3 = st.columns(3)
 with c1:
     caisse_cash = st.number_input("Cash", min_value=0.0,
                                   value=float(get_default("caisse_cash", 0)),
-                                  step=0.5, key="caisse_cash")
+                                  step=0.5, key=f"caisse_cash_{_date_iso}")
 with c2:
     caisse_card = st.number_input("Card", min_value=0.0,
                                   value=float(get_default("caisse_card", 0)),
-                                  step=0.5, key="caisse_card")
+                                  step=0.5, key=f"caisse_card_{_date_iso}")
 with c3:
     caisse_online = st.number_input("Online", min_value=0.0,
                                     value=float(get_default("caisse_online", 0)),
-                                    step=0.5, key="caisse_online")
+                                    step=0.5, key=f"caisse_online_{_date_iso}")
 
 st.caption(f"💰 Cash desk total: **${(caisse_cash+caisse_card+caisse_online):,.2f}**  ·  "
            f"Consistency check → should match Ticket rates revenue "
@@ -895,7 +891,7 @@ with c1:
         min_value=0,
         value=int(get_default("total_tickets", 0)),
         step=1,
-        key="total_tickets",
+        key=f"total_tickets_{_date_iso}",
     )
 with c2:
     st.metric("Auto tickets (rates + resellers + channels + groups)", f"{tickets_auto:.0f}")
@@ -907,12 +903,12 @@ special_event = st.text_input(
     "🎉 Special event / holiday",
     value=get_default("special_event", ""),
     placeholder="e.g. Halloween Festival, Thanksgiving, Broadway premiere…",
-    key="special_event",
+    key=f"special_event_{_date_iso}",
 )
 remarks = st.text_area(
     "📝 Notes",
     value=get_default("remarks", ""),
-    key="remarks",
+    key=f"remarks_{_date_iso}",
     placeholder="Anything worth mentioning: staff issue, technical incident, VIP visit…",
 )
 
