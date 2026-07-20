@@ -278,8 +278,9 @@ def _report_to_row_list(col_map, d, report_date, width):
         v = d.get(k)
         if v:
             put(tgt, float(v))
-    if d.get("total_tickets"):
-        put("Total Entrées", int(d["total_tickets"]))
+    eff_total = d.get("total_tickets") or d.get("tickets_auto")
+    if eff_total:
+        put("Total Entrées", int(eff_total))
     if d.get("total_revenue"):
         put("Chiffre d'Affaires (€)", float(d["total_revenue"]))
     notes = []
@@ -347,15 +348,29 @@ def save_to_gsheet(report_date, d):
 
 
 def _whatsapp_recap(report_date, d):
-    """Pre-composed WhatsApp recap link (wa.me) — one-tap send to any group."""
+    """Pre-composed WhatsApp recap link (wa.me) — museum debrief style, one-tap
+    send to any group. Plain text (no astral emojis, which break in wa.me URLs)."""
     from urllib.parse import quote
-    tk = int(d.get("total_tickets") or 0)
+    total = int(d.get("tickets_auto") or d.get("total_tickets") or 0)
+    validated = int(d.get("total_tickets") or 0)
     rev = float(d.get("total_revenue") or 0)
-    lines = [f"🏛️ Banksy Museum NYC — {report_date.strftime('%m/%d/%Y')}",
-             f"🎟️ Total tickets: {tk}",
-             f"💰 Revenue: ${rev:,.0f}"]
+
+    lines = [report_date.strftime("%d/%m/%Y"), "", f"TOTAL: {total}"]
+    if validated:
+        lines.append(f"Total validé: {validated}")
+    # breakdown: only resellers/groups with tickets that day
+    breakdown = [f"{name} : {int(d.get(f'rev_{name}') or 0)}"
+                 for name, _kind in RESELLERS if int(d.get(f"rev_{name}") or 0)]
+    grp = sum(int(d.get(f"grp_{g}_pax") or 0) for g in GROUP_TYPES)
+    if grp:
+        breakdown.append(f"Groupe : {grp}")
+    if breakdown:
+        lines.append("")
+        lines.extend(breakdown)
+    lines.append("")
+    lines.append(f"Revenue : ${rev:,.0f}")
     if d.get("special_event"):
-        lines.append(f"🎉 {d['special_event']}")
+        lines.append(f"Event : {d['special_event']}")
     return "https://wa.me/?text=" + quote("\n".join(lines))
 
 
