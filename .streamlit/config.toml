@@ -1,0 +1,6 @@
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#E4002B"
+base = "light"

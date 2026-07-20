@@ -1,0 +1,6 @@
+# Banksy NYC — Daily Report (cloud). Slim deps for Streamlit Community Cloud.
+streamlit>=1.40
+pandas>=2.2
+openpyxl>=3.1
+google-auth>=2.20
+google-api-python-client>=2.100
