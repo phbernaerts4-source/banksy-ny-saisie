@@ -283,8 +283,15 @@ def _report_to_row_list(col_map, d, report_date, width):
     eff_total = d.get("total_tickets") or d.get("tickets_auto")
     if eff_total:
         put("Total Entrées", int(eff_total))
-    if d.get("total_revenue"):
-        put("Chiffre d'Affaires (€)", float(d["total_revenue"]))
+    # CA = argent RÉELLEMENT encaissé (caisse cash+card+online). L'estimation
+    # tarifs (total_revenue, prix catalogue figés) n'est qu'un fallback si la
+    # caisse n'a pas été saisie. Le prix moyen réel = CA ÷ entrées (dérivé côté app).
+    _ca = (float(d.get("caisse_cash") or 0) + float(d.get("caisse_card") or 0)
+           + float(d.get("caisse_online") or 0))
+    if not _ca and d.get("total_revenue"):
+        _ca = float(d["total_revenue"])
+    if _ca:
+        put("Chiffre d'Affaires (€)", _ca)
     notes = []
     if d.get("special_event"):
         notes.append(f"🎉 {d['special_event']}")
@@ -601,9 +608,10 @@ def export_mastersheet_ny():
         if "Total Entrées" in col_map and d.get("total_tickets"):
             ws.cell(row=r, column=col_map["Total Entrées"],
                     value=int(d["total_tickets"]))
-        if "Chiffre d'Affaires (€)" in col_map and d.get("total_revenue"):
-            ws.cell(row=r, column=col_map["Chiffre d'Affaires (€)"],
-                    value=float(d["total_revenue"]))
+        _ca = (float(d.get("caisse_cash") or 0) + float(d.get("caisse_card") or 0)
+               + float(d.get("caisse_online") or 0)) or float(d.get("total_revenue") or 0)
+        if "Chiffre d'Affaires (€)" in col_map and _ca:
+            ws.cell(row=r, column=col_map["Chiffre d'Affaires (€)"], value=_ca)
         # Notes (concat special event + remarks)
         notes = []
         if d.get("special_event"):
