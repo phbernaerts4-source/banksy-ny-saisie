@@ -879,9 +879,11 @@ st.caption(f"💰 Cash desk total: **${(caisse_cash+caisse_card+caisse_online):,
 st.markdown("### ⬛ Summary")
 tickets_from_rates = sum(v["qty"] for v in pricing_data.values())
 tickets_from_resellers = sum(reseller_data.values())
-tickets_from_channels = sum(channel_data.values())
+tickets_from_channels = sum(channel_data.values())  # ATTRIBUTION seulement (comment ils nous ont connus) — PAS des ventes en plus
 tickets_from_groups = sum(g["pax"] for g in group_data.values())
-tickets_auto = tickets_from_rates + tickets_from_resellers + tickets_from_channels + tickets_from_groups
+# Total = ventes réelles : tarifs (porte) + revendeurs (OTA) + groupes.
+# Les "Direct channels" sont l'attribution des MÊMES entrées → NON additionnés.
+tickets_auto = tickets_from_rates + tickets_from_resellers + tickets_from_groups
 total_revenue = pricing_revenue + group_revenue + audio_revenue
 
 c1, c2, c3 = st.columns(3)
@@ -894,7 +896,9 @@ with c1:
         key=f"total_tickets_{_date_iso}",
     )
 with c2:
-    st.metric("Auto tickets (rates + resellers + channels + groups)", f"{tickets_auto:.0f}")
+    st.metric("Auto tickets (rates + resellers + groups)", f"{tickets_auto:.0f}",
+              help="Ventes réelles. Les « Direct channels » = attribution "
+                   "(comment les visiteurs nous ont connus), non additionnés.")
 with c3:
     st.metric("Total estimated revenue", f"${total_revenue:,.2f}")
 
