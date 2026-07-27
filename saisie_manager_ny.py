@@ -879,11 +879,13 @@ st.caption(f"💰 Cash desk total: **${(caisse_cash+caisse_card+caisse_online):,
 st.markdown("### ⬛ Summary")
 tickets_from_rates = sum(v["qty"] for v in pricing_data.values())
 tickets_from_resellers = sum(reseller_data.values())
-tickets_from_channels = sum(channel_data.values())  # ATTRIBUTION seulement (comment ils nous ont connus) — PAS des ventes en plus
+tickets_from_channels = sum(channel_data.values())
 tickets_from_groups = sum(g["pax"] for g in group_data.values())
-# Total = ventes réelles : tarifs (porte) + revendeurs (OTA) + groupes.
-# Les "Direct channels" sont l'attribution des MÊMES entrées → NON additionnés.
-tickets_auto = tickets_from_rates + tickets_from_resellers + tickets_from_groups
+# MODÈLE : les sections décrivent le MÊME lot d'entrées sous des angles différents
+# (revendeurs = par qui vendu · canaux = par où · caisse = par paiement · tarifs = par prix).
+# Le compte de référence = les REVENDEURS. Le reste sert de recoupement (doit concorder),
+# JAMAIS additionné. → total = somme des revendeurs.
+tickets_auto = tickets_from_resellers
 total_revenue = pricing_revenue + group_revenue + audio_revenue
 
 c1, c2, c3 = st.columns(3)
@@ -896,9 +898,10 @@ with c1:
         key=f"total_tickets_{_date_iso}",
     )
 with c2:
-    st.metric("Auto tickets (rates + resellers + groups)", f"{tickets_auto:.0f}",
-              help="Ventes réelles. Les « Direct channels » = attribution "
-                   "(comment les visiteurs nous ont connus), non additionnés.")
+    st.metric("Total entries (resellers)", f"{tickets_auto:.0f}",
+              help="Le compte de référence = les revendeurs. Canaux, caisse et "
+                   "tarifs sont des recoupements du MÊME lot d'entrées (doivent "
+                   "concorder), jamais additionnés.")
 with c3:
     st.metric("Total estimated revenue", f"${total_revenue:,.2f}")
 
