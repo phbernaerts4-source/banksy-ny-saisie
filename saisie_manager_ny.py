@@ -16,6 +16,17 @@ import json
 import os
 import sqlite3
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
+
+# The museum's day is New York's day. The cloud server runs on UTC: in winter
+# (EST = UTC-5) it is already "tomorrow" there from 7:00 pm New York time, which
+# is when the daily report is entered. Never use date.today() for the report date.
+TZ_NY = ZoneInfo("America/New_York")
+
+
+def today_ny():
+    """Today's date in New York, whatever the server's clock says."""
+    return datetime.now(TZ_NY).date()
 
 import pandas as pd
 import streamlit as st
@@ -692,10 +703,12 @@ st.markdown("---")
 
 report_date = st.date_input(
     "📅 Report date",
-    value=date.today(),
+    value=today_ny(),
     format="DD/MM/YYYY",
-    max_value=date.today(),
+    max_value=today_ny(),
 )
+st.caption(f"You are reporting for **{report_date.strftime('%A, %B %d, %Y')}** "
+           "(New York date). Check the day before saving.")
 
 # Recall a day from the Sheet (cloud-persistent). Loaded once per date; the form
 # widget keys are date-scoped (suffix _{_date_iso}) so every field re-inits from
